@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Pong Wars + Live Stats</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body {
+    display: flex;
+    font-family: sans-serif;
+    background: #222;
+    color: white;
+  }
+  #container {
+    display: flex;
+    gap: 20px;
+    margin: 20px;
+  }
+  #charts {
+    width: 400px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  canvas {
+    background: #111;
+    border-radius: 6px;
+  }
+</style>
+</head>
+<body>
+
+<div id="container">
+  <!-- Original Pong Wars -->
+  <canvas id="canvas" width="500" height="500" style="border:1px solid #555"></canvas>
+
+  <!-- Charts -->
+  <div id="charts">
+    <canvas id="ratioChart" height="200"></canvas>
+    <canvas id="histChart" height="200"></canvas>
+  </div>
+</div>
+
+<script>
+// === Original Pong Wars Code =========================
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+const size = 100;
+const pixel = canvas.width / size;
+
+let grid = [];
+for (let y = 0; y < size; y++) {
+  grid[y] = [];
+  for (let x = 0; x < size; x++) {
+    grid[y][x] = x < size/2 ? 0 : 1; // 0 = day, 1 = night
+  }
+}
+
+let balls = [
+  { x: 25, y: 25, vx: 1, vy: 1, color: 0 },
+  { x: 75, y: 75, vx: -1, vy: -1, color: 1 }
+];
+
+function step() {
+  for (let b of balls) {
+    let nx = b.x + b.vx;
+    let ny = b.y + b.vy;
+
+    if (nx < 0 || nx >= size) b.vx *= -1;
+    if (ny < 0 || ny >= size) b.vy *= -1;
+    
+    nx = b.x + b.vx;
+    ny = b.y + b.vy;
+
+    if (grid[Math.floor(ny)][Math.floor(nx)] !== b.color) {
+      grid[Math.floor(ny)][Math.floor(nx)] = b.color;
+    }
+
+    b.x += b.vx;
+    b.y += b.vy;
+  }
+}
+
+function draw() {
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      ctx.fillStyle = grid[y][x] === 0 ? "#eaffff" : "#003344";
+      ctx.fillRect(x * pixel, y * pixel, pixel, pixel);
+    }
+  }
+  
+  for (let b of balls) {
+    ctx.fillStyle = b.color === 0 ? "#003344" : "#eaffff";
+    ctx.beginPath();
+    ctx.arc(b.x * pixel, b.y * pixel, pixel * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// === Statistik-Funktionen =============================
+
+let ratioHistory = [];
+
+function computeRatio() {
+  let total = size * size;
+  let night = 0;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (grid[y][x] === 1) night++;
+    }
+  }
+  return night / total;
+}
+
+// === Chart.js Diagramme ===============================
+
+const ratioCtx = document.getElementById('ratioChart').getContext('2d');
+const histCtx  = document.getElementById('histChart').getContext('2d');
+
+let ratioChart = new Chart(ratioCtx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{
+      label: 'Night-Anteil',
+      data: [],
+      borderColor: 'cyan',
+      borderWidth: 2,
+      pointRadius: 0
+    }]
+  },
+  options: {
+    scales: {
+      y: { min: 0, max: 1 }
+    }
+  }
+});
+
+let histChart = new Chart(histCtx, {
+  type: 'bar',
+  data: {
+    labels: [],
+    datasets: [{
+      label: 'Histogramm',
+      data: [],
+      backgroundColor: 'orange'
+    }]
+  },
+  options: {
+    scales: {
+      x: { title: { display: true, text: "Night-Anteil" }},
+      y: { beginAtZero: true }
+    }
+  }
+});
+
+// Histogramm-Klassen
+const bins = 20;
+let histCounts = new Array(bins).fill(0);
+
+// === Animation Loop ===================================
+
+function updateCharts(ratio) {
+  ratioHistory.push(ratio);
+
+  // Liniendiagramm
+  ratioChart.data.labels.push("");
+  ratioChart.data.datasets[0].data.push(ratio);
+  ratioChart.update();
+
+  // Histogramm
+  let idx = Math.floor(ratio * bins);
+  if (idx >= bins) idx = bins - 1;
+  histCounts[idx]++;
+
+  histChart.data.labels = Array.from({length: bins}, (_, i) => (i/bins).toFixed(2));
+  histChart.data.datasets[0].data = histCounts;
+  histChart.update();
+}
+
+function loop() {
+  step();
+  draw();
+
+  const ratio = computeRatio();
+  updateCharts(ratio);
+
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+
+</body>
+</html>
