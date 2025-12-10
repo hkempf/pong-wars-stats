@@ -1,197 +1,390 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<title>Pong Wars + Live Stats</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<style>
-  body {
-    display: flex;
-    font-family: sans-serif;
-    background: #222;
-    color: white;
-  }
-  #container {
-    display: flex;
-    gap: 20px;
-    margin: 20px;
-  }
-  #charts {
-    width: 400px;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-  }
-  canvas {
-    background: #111;
-    border-radius: 6px;
-  }
-</style>
-</head>
-<body>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pong wars | Koen van Gilst</title>
+    <meta
+      name="description"
+      content="The eternal battle between day and night, good and bad. Written in JavaScript with some HTML & CSS in one index.html. Feel free to reuse the code and create your own version."
+    />
+    <link rel="canonical" href="https://pong-wars.koenvangilst.nl/" />
+    <link rel="author" href="https://koenvangilst.nl" />
+    <meta name="theme-color" content="#172B36" />
+    <meta name="creator" content="Koen van Gilst" />
+    <script defer data-domain="pong-wars.koenvangilst.nl" src="https://plausible.koenvangilst.nl/js/script.js"></script>
 
-<div id="container">
-  <!-- Original Pong Wars -->
-  <canvas id="canvas" width="500" height="500" style="border:1px solid #555"></canvas>
+    <!-- Chart.js für Live-Plot und Histogramm -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <!-- Charts -->
-  <div id="charts">
-    <canvas id="ratioChart" height="200"></canvas>
-    <canvas id="histChart" height="200"></canvas>
-  </div>
-</div>
+    <style>
+      html {
+        height: 100%;
+      }
 
-<script>
-// === Original Pong Wars Code =========================
+      body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: #202020;
+        color: #f5f5f5;
+        font-family: monospace;
+      }
 
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+      #container {
+        display: flex;
+        gap: 20px;
+        width: min(90vw, 90vh);
+        max-width: 1100px;
+        height: min(90vh, 90vw);
+      }
 
-const size = 100;
-const pixel = canvas.width / size;
+      #left {
+        display: flex;
+        flex-direction: column;
+        flex: 2;
+      }
 
-let grid = [];
-for (let y = 0; y < size; y++) {
-  grid[y] = [];
-  for (let x = 0; x < size; x++) {
-    grid[y][x] = x < size/2 ? 0 : 1; // 0 = day, 1 = night
-  }
-}
+      #right {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        gap: 20px;
+      }
 
-let balls = [
-  { x: 25, y: 25, vx: 1, vy: 1, color: 0 },
-  { x: 75, y: 75, vx: -1, vy: -1, color: 1 }
-];
+      #pongCanvas {
+        display: block;
+        border-radius: 4px;
+        overflow: hidden;
+        width: 100%;
+        height: auto;
+        margin-top: auto;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.4);
+      }
 
-function step() {
-  for (let b of balls) {
-    let nx = b.x + b.vx;
-    let ny = b.y + b.vy;
+      .chartCanvas {
+        background: #111;
+        border-radius: 4px;
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+      }
 
-    if (nx < 0 || nx >= size) b.vx *= -1;
-    if (ny < 0 || ny >= size) b.vy *= -1;
-    
-    nx = b.x + b.vx;
-    ny = b.y + b.vy;
+      #score {
+        font-family: monospace;
+        margin-top: 10px;
+        font-size: 14px;
+        padding-left: 2px;
+        color: #f5f5f5;
+      }
 
-    if (grid[Math.floor(ny)][Math.floor(nx)] !== b.color) {
-      grid[Math.floor(ny)][Math.floor(nx)] = b.color;
+      #made {
+        text-align: left;
+        line-height: 1.5;
+        font-family: monospace;
+        margin-top: 6px;
+        font-size: 10px;
+      }
+
+      #made a {
+        color: #d9e8e3;
+      }
+
+      .chartTitle {
+        font-size: 11px;
+        margin-bottom: 4px;
+        padding-left: 4px;
+        color: #d9e8e3;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="container">
+      <!-- Spielfeld links -->
+      <div id="left">
+        <canvas id="pongCanvas" width="600" height="600"></canvas>
+        <div id="score"></div>
+        <p id="made">
+          made by
+          <a href="https://koenvangilst.nl/labs/pong-wars">Koen van Gilst</a> | source on
+          <a href="https://github.com/vnglst/pong-wars">github</a>
+        </p>
+      </div>
+
+      <!-- Charts rechts -->
+      <div id="right">
+        <div>
+          <div class="chartTitle">Night-Anteil</div>
+          <canvas id="ratioChart" class="chartCanvas" height="200"></canvas>
+        </div>
+        <div>
+          <div class="chartTitle">Histogramm Night-Anteil</div>
+          <canvas id="histChart" class="chartCanvas" height="200"></canvas>
+        </div>
+      </div>
+    </div>
+  </body>
+
+  <script>
+    // Source palette: https://twitter.com/AlexCristache/status/1738610343499157872
+    // Idea for Pong wars: https://twitter.com/nicolasdnl/status/1749715070928433161
+
+    const colorPalette = {
+      ArcticPowder: "#F1F6F4",
+      MysticMint: "#D9E8E3",
+      Forsythia: "#FFC801",
+      DeepSaffron: "#FF9932",
+      NocturnalExpedition: "#114C5A",
+      OceanicNoir: "#172B36",
+    };
+
+    const canvas = document.getElementById("pongCanvas");
+    const ctx = canvas.getContext("2d");
+    const scoreElement = document.getElementById("score");
+
+    const DAY_COLOR = colorPalette.MysticMint;
+    const DAY_BALL_COLOR = colorPalette.NocturnalExpedition;
+    const NIGHT_COLOR = colorPalette.NocturnalExpedition;
+    const NIGHT_BALL_COLOR = colorPalette.MysticMint;
+    const SQUARE_SIZE = 25;
+    const MIN_SPEED = 5;
+    const MAX_SPEED = 10;
+
+    const numSquaresX = canvas.width / SQUARE_SIZE;
+    const numSquaresY = canvas.height / SQUARE_SIZE;
+
+    let dayScore = 0;
+    let nightScore = 0;
+
+    const squares = [];
+
+    // Populate the fields, one half day, one half night
+    for (let i = 0; i < numSquaresX; i++) {
+      squares[i] = [];
+      for (let j = 0; j < numSquaresY; j++) {
+        squares[i][j] = i < numSquaresX / 2 ? DAY_COLOR : NIGHT_COLOR;
+      }
     }
 
-    b.x += b.vx;
-    b.y += b.vy;
-  }
-}
+    const balls = [
+      {
+        x: canvas.width / 4,
+        y: canvas.height / 2,
+        dx: 8,
+        dy: -8,
+        reverseColor: DAY_COLOR,
+        ballColor: DAY_BALL_COLOR,
+      },
+      {
+        x: (canvas.width / 4) * 3,
+        y: canvas.height / 2,
+        dx: -8,
+        dy: 8,
+        reverseColor: NIGHT_COLOR,
+        ballColor: NIGHT_BALL_COLOR,
+      },
+    ];
 
-function draw() {
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      ctx.fillStyle = grid[y][x] === 0 ? "#eaffff" : "#003344";
-      ctx.fillRect(x * pixel, y * pixel, pixel, pixel);
+    let iteration = 0;
+
+    function drawBall(ball) {
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, SQUARE_SIZE / 2, 0, Math.PI * 2, false);
+      ctx.fillStyle = ball.ballColor;
+      ctx.fill();
+      ctx.closePath();
     }
-  }
-  
-  for (let b of balls) {
-    ctx.fillStyle = b.color === 0 ? "#003344" : "#eaffff";
-    ctx.beginPath();
-    ctx.arc(b.x * pixel, b.y * pixel, pixel * 0.6, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
 
-// === Statistik-Funktionen =============================
+    function drawSquares() {
+      dayScore = 0;
+      nightScore = 0;
 
-let ratioHistory = [];
+      for (let i = 0; i < numSquaresX; i++) {
+        for (let j = 0; j < numSquaresY; j++) {
+          ctx.fillStyle = squares[i][j];
+          ctx.fillRect(i * SQUARE_SIZE, j * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE);
 
-function computeRatio() {
-  let total = size * size;
-  let night = 0;
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      if (grid[y][x] === 1) night++;
+          // Update scores
+          if (squares[i][j] === DAY_COLOR) dayScore++;
+          if (squares[i][j] === NIGHT_COLOR) nightScore++;
+        }
+      }
     }
-  }
-  return night / total;
-}
 
-// === Chart.js Diagramme ===============================
+    function checkSquareCollision(ball) {
+      // Check multiple points around the ball's circumference
+      for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
+        const checkX = ball.x + Math.cos(angle) * (SQUARE_SIZE / 2);
+        const checkY = ball.y + Math.sin(angle) * (SQUARE_SIZE / 2);
 
-const ratioCtx = document.getElementById('ratioChart').getContext('2d');
-const histCtx  = document.getElementById('histChart').getContext('2d');
+        const i = Math.floor(checkX / SQUARE_SIZE);
+        const j = Math.floor(checkY / SQUARE_SIZE);
 
-let ratioChart = new Chart(ratioCtx, {
-  type: 'line',
-  data: {
-    labels: [],
-    datasets: [{
-      label: 'Night-Anteil',
-      data: [],
-      borderColor: 'cyan',
-      borderWidth: 2,
-      pointRadius: 0
-    }]
-  },
-  options: {
-    scales: {
-      y: { min: 0, max: 1 }
+        if (i >= 0 && i < numSquaresX && j >= 0 && j < numSquaresY) {
+          if (squares[i][j] !== ball.reverseColor) {
+            // Square hit! Update square color
+            squares[i][j] = ball.reverseColor;
+
+            // Determine bounce direction based on the angle
+            if (Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle))) {
+              ball.dx = -ball.dx;
+            } else {
+              ball.dy = -ball.dy;
+            }
+          }
+        }
+      }
     }
-  }
-});
 
-let histChart = new Chart(histCtx, {
-  type: 'bar',
-  data: {
-    labels: [],
-    datasets: [{
-      label: 'Histogramm',
-      data: [],
-      backgroundColor: 'orange'
-    }]
-  },
-  options: {
-    scales: {
-      x: { title: { display: true, text: "Night-Anteil" }},
-      y: { beginAtZero: true }
+    function checkBoundaryCollision(ball) {
+      if (ball.x + ball.dx > canvas.width - SQUARE_SIZE / 2 || ball.x + ball.dx < SQUARE_SIZE / 2) {
+        ball.dx = -ball.dx;
+      }
+      if (ball.y + ball.dy > canvas.height - SQUARE_SIZE / 2 || ball.y + ball.dy < SQUARE_SIZE / 2) {
+        ball.dy = -ball.dy;
+      }
     }
-  }
-});
 
-// Histogramm-Klassen
-const bins = 20;
-let histCounts = new Array(bins).fill(0);
+    function addRandomness(ball) {
+      ball.dx += Math.random() * 0.02 - 0.01;
+      ball.dy += Math.random() * 0.02 - 0.01;
 
-// === Animation Loop ===================================
+      // Limit the speed of the ball
+      ball.dx = Math.min(Math.max(ball.dx, -MAX_SPEED), MAX_SPEED);
+      ball.dy = Math.min(Math.max(ball.dy, -MAX_SPEED), MAX_SPEED);
 
-function updateCharts(ratio) {
-  ratioHistory.push(ratio);
+      // Make sure the ball always maintains a minimum speed
+      if (Math.abs(ball.dx) < MIN_SPEED) ball.dx = ball.dx > 0 ? MIN_SPEED : -MIN_SPEED;
+      if (Math.abs(ball.dy) < MIN_SPEED) ball.dy = ball.dy > 0 ? MIN_SPEED : -MIN_SPEED;
+    }
 
-  // Liniendiagramm
-  ratioChart.data.labels.push("");
-  ratioChart.data.datasets[0].data.push(ratio);
-  ratioChart.update();
+    // ---------- Statistik / Charts ----------
 
-  // Histogramm
-  let idx = Math.floor(ratio * bins);
-  if (idx >= bins) idx = bins - 1;
-  histCounts[idx]++;
+    const totalSquares = numSquaresX * numSquaresY;
 
-  histChart.data.labels = Array.from({length: bins}, (_, i) => (i/bins).toFixed(2));
-  histChart.data.datasets[0].data = histCounts;
-  histChart.update();
-}
+    const ratioCtx = document.getElementById("ratioChart").getContext("2d");
+    const histCtx = document.getElementById("histChart").getContext("2d");
 
-function loop() {
-  step();
-  draw();
+    const maxPoints = 600; // wie viele Zeitpunkte im Liniendiagramm sichtbar bleiben
+    const bins = 20;
+    const histCounts = new Array(bins).fill(0);
 
-  const ratio = computeRatio();
-  updateCharts(ratio);
+    const ratioChart = new Chart(ratioCtx, {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: "Night-Anteil",
+            data: [],
+            borderColor: "#00ffff",
+            borderWidth: 2,
+            pointRadius: 0,
+          },
+        ],
+      },
+      options: {
+        animation: false,
+        responsive: true,
+        scales: {
+          x: {
+            ticks: { display: false },
+            grid: { display: false },
+          },
+          y: {
+            min: 0,
+            max: 1,
+            grid: { color: "#333" },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+        },
+      },
+    });
 
-  requestAnimationFrame(loop);
-}
+    const histLabels = Array.from({ length: bins }, (_, i) =>
+      ((i + 0.5) / bins).toFixed(2)
+    );
 
-loop();
-</script>
+    const histChart = new Chart(histCtx, {
+      type: "bar",
+      data: {
+        labels: histLabels,
+        datasets: [
+          {
+            label: "Histogramm",
+            data: histCounts,
+            backgroundColor: "#ff9932",
+          },
+        ],
+      },
+      options: {
+        animation: false,
+        responsive: true,
+        scales: {
+          x: {
+            title: { display: true, text: "Night-Anteil" },
+            grid: { display: false },
+          },
+          y: {
+            beginAtZero: true,
+            grid: { color: "#333" },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+        },
+      },
+    });
 
-</body>
+    function updateCharts() {
+      const ratio = nightScore / totalSquares;
+
+      // Liniendiagramm
+      ratioChart.data.labels.push("");
+      ratioChart.data.datasets[0].data.push(ratio);
+      if (ratioChart.data.labels.length > maxPoints) {
+        ratioChart.data.labels.shift();
+        ratioChart.data.datasets[0].data.shift();
+      }
+      ratioChart.update("none");
+
+      // Histogramm
+      let idx = Math.floor(ratio * bins);
+      if (idx < 0) idx = 0;
+      if (idx >= bins) idx = bins - 1;
+      histCounts[idx]++;
+      histChart.data.datasets[0].data = histCounts;
+      histChart.update("none");
+    }
+
+    // ---------- Haupt-Draw-Loop ----------
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawSquares();
+
+      scoreElement.textContent = `day ${dayScore} | night ${nightScore}`;
+
+      balls.forEach((ball) => {
+        drawBall(ball);
+        checkSquareCollision(ball);
+        checkBoundaryCollision(ball);
+        ball.x += ball.dx;
+        ball.y += ball.dy;
+
+        addRandomness(ball);
+      });
+
+      updateCharts();
+
+      iteration++;
+      if (iteration % 1_000 === 0) console.log("iteration", iteration);
+    }
+
+    const FRAME_RATE = 100;
+    setInterval(draw, 1000 / FRAME_RATE);
+  </script>
 </html>
