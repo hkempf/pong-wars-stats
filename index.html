@@ -11,20 +11,24 @@
     <link rel="author" href="https://koenvangilst.nl" />
     <meta name="theme-color" content="#172B36" />
     <meta name="creator" content="Koen van Gilst" />
-    <script defer data-domain="pong-wars.koenvangilst.nl" src="https://plausible.koenvangilst.nl/js/script.js"></script>
+    <script
+      defer
+      data-domain="pong-wars.koenvangilst.nl"
+      src="https://plausible.koenvangilst.nl/js/script.js"
+    ></script>
 
     <!-- Chart.js für Live-Plot und Histogramm -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
-      html {
-        height: 100%;
-      }
-
+      html,
       body {
         height: 100%;
         margin: 0;
         padding: 0;
+      }
+
+      body {
         display: flex;
         justify-content: center;
         align-items: center;
@@ -33,25 +37,25 @@
         font-family: monospace;
       }
 
+      /* Zwei Hälften: links Spielfeld, rechts Plots */
       #container {
         display: flex;
-        gap: 20px;
-        width: min(90vw, 90vh);
-        max-width: 1100px;
-        height: min(90vh, 90vw);
+        width: min(1200px, 100vw);
+        height: min(800px, 100vh);
       }
 
-      #left {
-        display: flex;
-        flex-direction: column;
-        flex: 2;
-      }
-
+      #left,
       #right {
+        flex: 1;
         display: flex;
         flex-direction: column;
-        flex: 1;
-        gap: 20px;
+      }
+
+      /* Spielfeld zentriert in linker Hälfte */
+      #left {
+        align-items: center;
+        justify-content: center;
+        padding: 10px;
       }
 
       #pongCanvas {
@@ -60,34 +64,35 @@
         overflow: hidden;
         width: 100%;
         height: auto;
-        margin-top: auto;
+        max-width: 600px;
+        max-height: 600px;
         box-shadow: 0 0 20px rgba(0, 0, 0, 0.4);
       }
 
-      .chartCanvas {
-        background: #111;
-        border-radius: 4px;
-        box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
-      }
-
       #score {
-        font-family: monospace;
-        margin-top: 10px;
+        margin-top: 8px;
         font-size: 14px;
-        padding-left: 2px;
-        color: #f5f5f5;
       }
 
       #made {
-        text-align: left;
-        line-height: 1.5;
-        font-family: monospace;
-        margin-top: 6px;
+        margin-top: 4px;
         font-size: 10px;
       }
 
       #made a {
         color: #d9e8e3;
+      }
+
+      /* Rechte Hälfte: Plots übereinander */
+      #right {
+        padding: 10px 10px 10px 20px;
+        gap: 20px;
+      }
+
+      .chartBlock {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
       }
 
       .chartTitle {
@@ -96,12 +101,20 @@
         padding-left: 4px;
         color: #d9e8e3;
       }
+
+      .chartCanvas {
+        background: #111;
+        border-radius: 4px;
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+        width: 100%;
+        height: 100%;
+      }
     </style>
   </head>
 
   <body>
     <div id="container">
-      <!-- Spielfeld links -->
+      <!-- Linke Hälfte: Spielfeld -->
       <div id="left">
         <canvas id="pongCanvas" width="600" height="600"></canvas>
         <div id="score"></div>
@@ -112,23 +125,22 @@
         </p>
       </div>
 
-      <!-- Charts rechts -->
+      <!-- Rechte Hälfte: Plots übereinander -->
       <div id="right">
-        <div>
-          <div class="chartTitle">Night-Anteil</div>
-          <canvas id="ratioChart" class="chartCanvas" height="200"></canvas>
+        <div class="chartBlock">
+          <div class="chartTitle">Live-Anteil Day / Night</div>
+          <canvas id="ratioChart" class="chartCanvas"></canvas>
         </div>
-        <div>
-          <div class="chartTitle">Histogramm Night-Anteil</div>
-          <canvas id="histChart" class="chartCanvas" height="200"></canvas>
+        <div class="chartBlock">
+          <div class="chartTitle">Histogramm der Anteile</div>
+          <canvas id="histChart" class="chartCanvas"></canvas>
         </div>
       </div>
     </div>
   </body>
 
   <script>
-    // Source palette: https://twitter.com/AlexCristache/status/1738610343499157872
-    // Idea for Pong wars: https://twitter.com/nicolasdnl/status/1749715070928433161
+    // ========= Original-Pong-Wars-Logik (unverändert) =========
 
     const colorPalette = {
       ArcticPowder: "#F1F6F4",
@@ -238,10 +250,16 @@
     }
 
     function checkBoundaryCollision(ball) {
-      if (ball.x + ball.dx > canvas.width - SQUARE_SIZE / 2 || ball.x + ball.dx < SQUARE_SIZE / 2) {
+      if (
+        ball.x + ball.dx > canvas.width - SQUARE_SIZE / 2 ||
+        ball.x + ball.dx < SQUARE_SIZE / 2
+      ) {
         ball.dx = -ball.dx;
       }
-      if (ball.y + ball.dy > canvas.height - SQUARE_SIZE / 2 || ball.y + ball.dy < SQUARE_SIZE / 2) {
+      if (
+        ball.y + ball.dy > canvas.height - SQUARE_SIZE / 2 ||
+        ball.y + ball.dy < SQUARE_SIZE / 2
+      ) {
         ball.dy = -ball.dy;
       }
     }
@@ -259,7 +277,7 @@
       if (Math.abs(ball.dy) < MIN_SPEED) ball.dy = ball.dy > 0 ? MIN_SPEED : -MIN_SPEED;
     }
 
-    // ---------- Statistik / Charts ----------
+    // ========= Statistik / Charts =========
 
     const totalSquares = numSquaresX * numSquaresY;
 
@@ -268,25 +286,38 @@
 
     const maxPoints = 600; // wie viele Zeitpunkte im Liniendiagramm sichtbar bleiben
     const bins = 20;
-    const histCounts = new Array(bins).fill(0);
 
+    const histCountsDay = new Array(bins).fill(0);
+    const histCountsNight = new Array(bins).fill(0);
+
+    // Live-Anteile: Day & Night als Linien
     const ratioChart = new Chart(ratioCtx, {
       type: "line",
       data: {
         labels: [],
         datasets: [
           {
-            label: "Night-Anteil",
+            label: "Day",
             data: [],
-            borderColor: "#00ffff",
+            borderColor: DAY_COLOR,
             borderWidth: 2,
             pointRadius: 0,
+            tension: 0,
+          },
+          {
+            label: "Night",
+            data: [],
+            borderColor: NIGHT_COLOR,
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0,
           },
         ],
       },
       options: {
         animation: false,
         responsive: true,
+        maintainAspectRatio: false,
         scales: {
           x: {
             ticks: { display: false },
@@ -299,7 +330,11 @@
           },
         },
         plugins: {
-          legend: { display: false },
+          legend: {
+            labels: {
+              color: "#d9e8e3",
+            },
+          },
         },
       },
     });
@@ -308,59 +343,92 @@
       ((i + 0.5) / bins).toFixed(2)
     );
 
+    // Histogramm: zwei Kurven (Day & Night)
     const histChart = new Chart(histCtx, {
-      type: "bar",
+      type: "line",
       data: {
         labels: histLabels,
         datasets: [
           {
-            label: "Histogramm",
-            data: histCounts,
-            backgroundColor: "#ff9932",
+            label: "Day",
+            data: histCountsDay,
+            borderColor: DAY_COLOR,
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.2,
+            fill: false,
+          },
+          {
+            label: "Night",
+            data: histCountsNight,
+            borderColor: NIGHT_COLOR,
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.2,
+            fill: false,
           },
         ],
       },
       options: {
         animation: false,
         responsive: true,
+        maintainAspectRatio: false,
         scales: {
           x: {
-            title: { display: true, text: "Night-Anteil" },
-            grid: { display: false },
+            title: { display: true, text: "Anteil" },
+            grid: { color: "#333" },
+            ticks: { color: "#d9e8e3" },
           },
           y: {
             beginAtZero: true,
             grid: { color: "#333" },
+            ticks: { color: "#d9e8e3" },
           },
         },
         plugins: {
-          legend: { display: false },
+          legend: {
+            labels: {
+              color: "#d9e8e3",
+            },
+          },
         },
       },
     });
 
     function updateCharts() {
-      const ratio = nightScore / totalSquares;
+      const ratioNight = nightScore / totalSquares;
+      const ratioDay = 1 - ratioNight;
 
-      // Liniendiagramm
+      // Zeitreihe
       ratioChart.data.labels.push("");
-      ratioChart.data.datasets[0].data.push(ratio);
+      ratioChart.data.datasets[0].data.push(ratioDay);
+      ratioChart.data.datasets[1].data.push(ratioNight);
+
       if (ratioChart.data.labels.length > maxPoints) {
         ratioChart.data.labels.shift();
         ratioChart.data.datasets[0].data.shift();
+        ratioChart.data.datasets[1].data.shift();
       }
       ratioChart.update("none");
 
       // Histogramm
-      let idx = Math.floor(ratio * bins);
-      if (idx < 0) idx = 0;
-      if (idx >= bins) idx = bins - 1;
-      histCounts[idx]++;
-      histChart.data.datasets[0].data = histCounts;
+      let idxNight = Math.floor(ratioNight * bins);
+      let idxDay = Math.floor(ratioDay * bins);
+
+      if (idxNight < 0) idxNight = 0;
+      if (idxNight >= bins) idxNight = bins - 1;
+      if (idxDay < 0) idxDay = 0;
+      if (idxDay >= bins) idxDay = bins - 1;
+
+      histCountsNight[idxNight]++;
+      histCountsDay[idxDay]++;
+
+      histChart.data.datasets[0].data = histCountsDay;
+      histChart.data.datasets[1].data = histCountsNight;
       histChart.update("none");
     }
 
-    // ---------- Haupt-Draw-Loop ----------
+    // ========= Haupt-Draw-Loop =========
 
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
