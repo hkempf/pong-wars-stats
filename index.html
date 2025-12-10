@@ -69,7 +69,10 @@
         box-shadow: 0 0 20px rgba(0, 0, 0, 0.4);
       }
 
-      #score {
+      #infoRow {
+        display: flex;
+        align-items: center;
+        gap: 10px;
         margin-top: 8px;
         font-size: 14px;
       }
@@ -83,11 +86,26 @@
         color: #d9e8e3;
       }
 
+      #pauseBtn {
+        padding: 2px 10px;
+        font-size: 12px;
+        border-radius: 4px;
+        border: 1px solid #555;
+        background: #303030;
+        color: #f5f5f5;
+        cursor: pointer;
+      }
+
+      #pauseBtn:hover {
+        background: #404040;
+      }
+
       /* rechte Hälfte: zwei Plot-Blöcke übereinander */
       #right {
         padding: 10px 10px 10px 20px;
-        gap: 20px;
+        gap: 40px;
         justify-content: center;
+        align-items: center;
       }
 
       .chartBlock {
@@ -102,7 +120,7 @@
         color: #d9e8e3;
       }
 
-      /* feste Chart-Größe, keine Flex-Höhen */
+      /* feste Chart-Größe */
       .chartCanvas {
         background: #111;
         border-radius: 4px;
@@ -117,7 +135,12 @@
       <!-- linke Hälfte: Spielfeld -->
       <div id="left">
         <canvas id="pongCanvas" width="600" height="600"></canvas>
-        <div id="score"></div>
+
+        <div id="infoRow">
+          <div id="score"></div>
+          <button id="pauseBtn">Pause</button>
+        </div>
+
         <p id="made">
           made by
           <a href="https://koenvangilst.nl/labs/pong-wars">Koen van Gilst</a> | source on
@@ -128,22 +151,21 @@
       <!-- rechte Hälfte: Plots -->
       <div id="right">
         <div class="chartBlock">
-          <div class="chartTitle">Live-Anteil Day / Night</div>
-          <!-- Feste Größe per Attribut -->
+          <div class="chartTitle">Live-Anteil Day / Night (geglättet, inkl. Max)</div>
           <canvas
             id="ratioChart"
             class="chartCanvas"
-            width="280"
-            height="280"
+            width="320"
+            height="320"
           ></canvas>
         </div>
         <div class="chartBlock">
-          <div class="chartTitle">Histogramm der Anteile</div>
+          <div class="chartTitle">Histogramm der Anteile (normalisiert)</div>
           <canvas
             id="histChart"
             class="chartCanvas"
-            width="280"
-            height="280"
+            width="320"
+            height="320"
           ></canvas>
         </div>
       </div>
@@ -165,6 +187,7 @@
     const canvas = document.getElementById("pongCanvas");
     const ctx = canvas.getContext("2d");
     const scoreElement = document.getElementById("score");
+    const pauseBtn = document.getElementById("pauseBtn");
 
     const DAY_COLOR = colorPalette.MysticMint;
     const DAY_BALL_COLOR = colorPalette.NocturnalExpedition;
@@ -210,6 +233,12 @@
     ];
 
     let iteration = 0;
+    let paused = false;
+
+    pauseBtn.addEventListener("click", () => {
+      paused = !paused;
+      pauseBtn.textContent = paused ? "Play" : "Pause";
+    });
 
     function drawBall(ball) {
       ctx.beginPath();
@@ -290,9 +319,21 @@
 
     const maxPoints = 600;
     const bins = 20;
+    const binWidth = 1 / bins;
+    const binCenters = Array.from(
+      { length: bins },
+      (_, i) => (i + 0.5) * binWidth
+    );
 
     const histCountsDay = new Array(bins).fill(0);
     const histCountsNight = new Array(bins).fill(0);
+    let totalSamples = 0;
+
+    let smoothDay = 0.5;
+    let smoothNight = 0.5;
+    let maxDay = 0.5;
+    let maxNight = 0.5;
+    const alpha = 0.9; // Glättung (EMA)
 
     const ratioChart = new Chart(ratioCtx, {
       type: "line",
@@ -300,7 +341,7 @@
         labels: [],
         datasets: [
           {
-            label: "Day",
+            label: "Day (smooth)",
             data: [],
             borderColor: DAY_COLOR,
             borderWidth: 2,
@@ -308,10 +349,28 @@
             tension: 0,
           },
           {
-            label: "Night",
+            label: "Night (smooth)",
             data: [],
             borderColor: NIGHT_COLOR,
             borderWidth: 2,
+            pointRadius: 0,
+            tension: 0,
+          },
+          {
+            label: "Day max",
+            data: [],
+            borderColor: DAY_COLOR,
+            borderWidth: 1,
+            borderDash: [5, 5],
+            pointRadius: 0,
+            tension: 0,
+          },
+          {
+            label: "Night max",
+            data: [],
+            borderColor: NIGHT_COLOR,
+            borderWidth: 1,
+            borderDash: [5, 5],
             pointRadius: 0,
             tension: 0,
           },
@@ -319,7 +378,7 @@
       },
       options: {
         animation: false,
-        responsive: false,        // WICHTIG: keine automatische Größenänderung
+        responsive: false,
         scales: {
           x: {
             ticks: { display: false },
@@ -339,18 +398,13 @@
       },
     });
 
-    const histLabels = Array.from({ length: bins }, (_, i) =>
-      ((i + 0.5) / bins).toFixed(2)
-    );
-
     const histChart = new Chart(histCtx, {
       type: "line",
       data: {
-        labels: histLabels,
         datasets: [
           {
             label: "Day",
-            data: histCountsDay,
+            data: binCenters.map((x) => ({ x, y: 0 })),
             borderColor: DAY_COLOR,
             borderWidth: 2,
             pointRadius: 0,
@@ -359,7 +413,7 @@
           },
           {
             label: "Night",
-            data: histCountsNight,
+            data: binCenters.map((x) => ({ x, y: 0 })),
             borderColor: NIGHT_COLOR,
             borderWidth: 2,
             pointRadius: 0,
@@ -370,15 +424,24 @@
       },
       options: {
         animation: false,
-        responsive: false,        // ebenfalls fest
+        responsive: false,
         scales: {
           x: {
+            type: "linear",
+            min: 0,
+            max: 1,
             title: { display: true, text: "Anteil" },
-            grid: { color: "#333" },
             ticks: { color: "#d9e8e3" },
+            grid: {
+              color: (ctx) =>
+                ctx.tick.value === 0.5 ? "#666" : "#333",
+              borderDash: (ctx) =>
+                ctx.tick.value === 0.5 ? [4, 4] : undefined,
+            },
           },
           y: {
-            beginAtZero: true,
+            min: 0,
+            max: 1,
             grid: { color: "#333" },
             ticks: { color: "#d9e8e3" },
           },
@@ -395,17 +458,34 @@
       const ratioNight = nightScore / totalSquares;
       const ratioDay = 1 - ratioNight;
 
+      totalSamples++;
+
+      if (totalSamples === 1) {
+        smoothDay = ratioDay;
+        smoothNight = ratioNight;
+        maxDay = smoothDay;
+        maxNight = smoothNight;
+      } else {
+        smoothDay = alpha * smoothDay + (1 - alpha) * ratioDay;
+        smoothNight = alpha * smoothNight + (1 - alpha) * ratioNight;
+        if (smoothDay > maxDay) maxDay = smoothDay;
+        if (smoothNight > maxNight) maxNight = smoothNight;
+      }
+
+      // Live-Zeitreihe
       ratioChart.data.labels.push("");
-      ratioChart.data.datasets[0].data.push(ratioDay);
-      ratioChart.data.datasets[1].data.push(ratioNight);
+      ratioChart.data.datasets[0].data.push(smoothDay);
+      ratioChart.data.datasets[1].data.push(smoothNight);
+      ratioChart.data.datasets[2].data.push(maxDay);
+      ratioChart.data.datasets[3].data.push(maxNight);
 
       if (ratioChart.data.labels.length > maxPoints) {
         ratioChart.data.labels.shift();
-        ratioChart.data.datasets[0].data.shift();
-        ratioChart.data.datasets[1].data.shift();
+        ratioChart.data.datasets.forEach((ds) => ds.data.shift());
       }
       ratioChart.update("none");
 
+      // Histogramm (normalisiert auf [0,1])
       let idxNight = Math.floor(ratioNight * bins);
       let idxDay = Math.floor(ratioDay * bins);
       if (idxNight < 0) idxNight = 0;
@@ -416,18 +496,32 @@
       histCountsNight[idxNight]++;
       histCountsDay[idxDay]++;
 
-      histChart.data.datasets[0].data = histCountsDay;
-      histChart.data.datasets[1].data = histCountsNight;
+      const densNight = histCountsNight.map((c) => c / totalSamples);
+      const densDay = histCountsDay.map((c) => c / totalSamples);
+
+      histChart.data.datasets[0].data = binCenters.map((x, i) => ({
+        x,
+        y: densDay[i],
+      }));
+      histChart.data.datasets[1].data = binCenters.map((x, i) => ({
+        x,
+        y: densNight[i],
+      }));
+
       histChart.update("none");
     }
 
     // ========= Haupt-Loop =========
 
+    const FRAME_RATE = 100;
+
     function draw() {
+      if (paused) return;
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawSquares();
 
-      scoreElement.textContent = `day ${dayScore} | night ${nightScore}`;
+      scoreElement.textContent = `day ${dayScore} | night ${nightScore} | iter ${iteration}`;
 
       balls.forEach((ball) => {
         drawBall(ball);
@@ -445,7 +539,6 @@
       iteration++;
     }
 
-    const FRAME_RATE = 100;
     setInterval(draw, 1000 / FRAME_RATE);
   </script>
 </html>
