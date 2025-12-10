@@ -17,7 +17,7 @@
       src="https://plausible.koenvangilst.nl/js/script.js"
     ></script>
 
-    <!-- Chart.js für Live-Plot und Histogramm -->
+    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
@@ -37,7 +37,7 @@
         font-family: monospace;
       }
 
-      /* Zwei Hälften: links Spielfeld, rechts Plots */
+      /* zwei Hälften nebeneinander */
       #container {
         display: flex;
         width: min(1200px, 100vw);
@@ -51,7 +51,7 @@
         flex-direction: column;
       }
 
-      /* Spielfeld zentriert in linker Hälfte */
+      /* Spielfeld-Hälfte: Inhalt zentrieren */
       #left {
         align-items: center;
         justify-content: center;
@@ -83,14 +83,15 @@
         color: #d9e8e3;
       }
 
-      /* Rechte Hälfte: Plots übereinander */
+      /* rechte Hälfte: zwei Plot-Blöcke übereinander */
       #right {
         padding: 10px 10px 10px 20px;
         gap: 20px;
+        justify-content: space-between;
       }
 
       .chartBlock {
-        flex: 1;
+        flex: 0 0 48%;
         display: flex;
         flex-direction: column;
       }
@@ -107,14 +108,13 @@
         border-radius: 4px;
         box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
         width: 100%;
-        height: 100%;
       }
     </style>
   </head>
 
   <body>
     <div id="container">
-      <!-- Linke Hälfte: Spielfeld -->
+      <!-- linke Hälfte: Spielfeld -->
       <div id="left">
         <canvas id="pongCanvas" width="600" height="600"></canvas>
         <div id="score"></div>
@@ -125,22 +125,32 @@
         </p>
       </div>
 
-      <!-- Rechte Hälfte: Plots übereinander -->
+      <!-- rechte Hälfte: Plots -->
       <div id="right">
         <div class="chartBlock">
           <div class="chartTitle">Live-Anteil Day / Night</div>
-          <canvas id="ratioChart" class="chartCanvas"></canvas>
+          <canvas
+            id="ratioChart"
+            class="chartCanvas"
+            width="400"
+            height="220"
+          ></canvas>
         </div>
         <div class="chartBlock">
           <div class="chartTitle">Histogramm der Anteile</div>
-          <canvas id="histChart" class="chartCanvas"></canvas>
+          <canvas
+            id="histChart"
+            class="chartCanvas"
+            width="400"
+            height="220"
+          ></canvas>
         </div>
       </div>
     </div>
   </body>
 
   <script>
-    // ========= Original-Pong-Wars-Logik (unverändert) =========
+    // ========= Original-Pong-Wars-Logik =========
 
     const colorPalette = {
       ArcticPowder: "#F1F6F4",
@@ -171,7 +181,7 @@
 
     const squares = [];
 
-    // Populate the fields, one half day, one half night
+    // Fläche initial befüllen
     for (let i = 0; i < numSquaresX; i++) {
       squares[i] = [];
       for (let j = 0; j < numSquaresY; j++) {
@@ -217,7 +227,6 @@
           ctx.fillStyle = squares[i][j];
           ctx.fillRect(i * SQUARE_SIZE, j * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE);
 
-          // Update scores
           if (squares[i][j] === DAY_COLOR) dayScore++;
           if (squares[i][j] === NIGHT_COLOR) nightScore++;
         }
@@ -225,7 +234,6 @@
     }
 
     function checkSquareCollision(ball) {
-      // Check multiple points around the ball's circumference
       for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
         const checkX = ball.x + Math.cos(angle) * (SQUARE_SIZE / 2);
         const checkY = ball.y + Math.sin(angle) * (SQUARE_SIZE / 2);
@@ -235,10 +243,8 @@
 
         if (i >= 0 && i < numSquaresX && j >= 0 && j < numSquaresY) {
           if (squares[i][j] !== ball.reverseColor) {
-            // Square hit! Update square color
             squares[i][j] = ball.reverseColor;
 
-            // Determine bounce direction based on the angle
             if (Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle))) {
               ball.dx = -ball.dx;
             } else {
@@ -268,11 +274,9 @@
       ball.dx += Math.random() * 0.02 - 0.01;
       ball.dy += Math.random() * 0.02 - 0.01;
 
-      // Limit the speed of the ball
       ball.dx = Math.min(Math.max(ball.dx, -MAX_SPEED), MAX_SPEED);
       ball.dy = Math.min(Math.max(ball.dy, -MAX_SPEED), MAX_SPEED);
 
-      // Make sure the ball always maintains a minimum speed
       if (Math.abs(ball.dx) < MIN_SPEED) ball.dx = ball.dx > 0 ? MIN_SPEED : -MIN_SPEED;
       if (Math.abs(ball.dy) < MIN_SPEED) ball.dy = ball.dy > 0 ? MIN_SPEED : -MIN_SPEED;
     }
@@ -280,17 +284,15 @@
     // ========= Statistik / Charts =========
 
     const totalSquares = numSquaresX * numSquaresY;
-
     const ratioCtx = document.getElementById("ratioChart").getContext("2d");
     const histCtx = document.getElementById("histChart").getContext("2d");
 
-    const maxPoints = 600; // wie viele Zeitpunkte im Liniendiagramm sichtbar bleiben
+    const maxPoints = 600;
     const bins = 20;
 
     const histCountsDay = new Array(bins).fill(0);
     const histCountsNight = new Array(bins).fill(0);
 
-    // Live-Anteile: Day & Night als Linien
     const ratioChart = new Chart(ratioCtx, {
       type: "line",
       data: {
@@ -331,9 +333,7 @@
         },
         plugins: {
           legend: {
-            labels: {
-              color: "#d9e8e3",
-            },
+            labels: { color: "#d9e8e3" },
           },
         },
       },
@@ -343,7 +343,6 @@
       ((i + 0.5) / bins).toFixed(2)
     );
 
-    // Histogramm: zwei Kurven (Day & Night)
     const histChart = new Chart(histCtx, {
       type: "line",
       data: {
@@ -387,9 +386,7 @@
         },
         plugins: {
           legend: {
-            labels: {
-              color: "#d9e8e3",
-            },
+            labels: { color: "#d9e8e3" },
           },
         },
       },
@@ -399,7 +396,6 @@
       const ratioNight = nightScore / totalSquares;
       const ratioDay = 1 - ratioNight;
 
-      // Zeitreihe
       ratioChart.data.labels.push("");
       ratioChart.data.datasets[0].data.push(ratioDay);
       ratioChart.data.datasets[1].data.push(ratioNight);
@@ -411,10 +407,8 @@
       }
       ratioChart.update("none");
 
-      // Histogramm
       let idxNight = Math.floor(ratioNight * bins);
       let idxDay = Math.floor(ratioDay * bins);
-
       if (idxNight < 0) idxNight = 0;
       if (idxNight >= bins) idxNight = bins - 1;
       if (idxDay < 0) idxDay = 0;
@@ -428,7 +422,7 @@
       histChart.update("none");
     }
 
-    // ========= Haupt-Draw-Loop =========
+    // ========= Haupt-Loop =========
 
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -442,14 +436,15 @@
         checkBoundaryCollision(ball);
         ball.x += ball.dx;
         ball.y += ball.dy;
-
         addRandomness(ball);
       });
 
-      updateCharts();
+      // Charts seltener updaten, um Performance zu schonen
+      if (iteration % 5 === 0) {
+        updateCharts();
+      }
 
       iteration++;
-      if (iteration % 1_000 === 0) console.log("iteration", iteration);
     }
 
     const FRAME_RATE = 100;
