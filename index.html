@@ -40,7 +40,7 @@
       /* zwei Hälften nebeneinander */
       #container {
         display: flex;
-        width: min(1200px, 100vw);
+        width: min(1400px, 100vw);
         height: min(800px, 100vh);
       }
 
@@ -100,7 +100,7 @@
         background: #404040;
       }
 
-      /* rechte Hälfte: zwei Plot-Blöcke übereinander */
+      /* rechte Hälfte: zwei Plot-Blöcke übereinander, in etwa gespiegelt */
       #right {
         padding: 10px 10px 10px 20px;
         gap: 40px;
@@ -120,7 +120,7 @@
         color: #d9e8e3;
       }
 
-      /* feste Chart-Größe */
+      /* feste Chart-Größe, Breite wie Spielfeld (skaliert dann in der Spalte) */
       .chartCanvas {
         background: #111;
         border-radius: 4px;
@@ -151,21 +151,25 @@
       <!-- rechte Hälfte: Plots -->
       <div id="right">
         <div class="chartBlock">
-          <div class="chartTitle">Live-Anteil Day / Night (geglättet, inkl. Max)</div>
+          <div class="chartTitle">
+            Live-Anteil Day / Night (geglättet, inkl. Min/Max)
+          </div>
           <canvas
             id="ratioChart"
             class="chartCanvas"
-            width="320"
-            height="320"
+            width="600"
+            height="260"
           ></canvas>
         </div>
         <div class="chartBlock">
-          <div class="chartTitle">Histogramm der Anteile (normalisiert)</div>
+          <div class="chartTitle">
+            Histogramm der Anteile (normalisiert)
+          </div>
           <canvas
             id="histChart"
             class="chartCanvas"
-            width="320"
-            height="320"
+            width="600"
+            height="260"
           ></canvas>
         </div>
       </div>
@@ -173,7 +177,7 @@
   </body>
 
   <script>
-    // ========= Original-Pong-Wars-Logik =========
+    // ========= Original-Pong-Wars-Logik (leicht ergänzt) =========
 
     const colorPalette = {
       ArcticPowder: "#F1F6F4",
@@ -235,6 +239,10 @@
     let iteration = 0;
     let paused = false;
 
+    // "Stale"-Erkennung: wann wurde zuletzt ein Feld umgefärbt?
+    let lastChangeIteration = 0;
+    const STALE_THRESHOLD = 5000; // Anzahl Iterationen ohne Farbwechsel -> Kick
+
     pauseBtn.addEventListener("click", () => {
       paused = !paused;
       pauseBtn.textContent = paused ? "Play" : "Pause";
@@ -264,6 +272,8 @@
     }
 
     function checkSquareCollision(ball) {
+      let changed = false;
+
       for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
         const checkX = ball.x + Math.cos(angle) * (SQUARE_SIZE / 2);
         const checkY = ball.y + Math.sin(angle) * (SQUARE_SIZE / 2);
@@ -274,6 +284,7 @@
         if (i >= 0 && i < numSquaresX && j >= 0 && j < numSquaresY) {
           if (squares[i][j] !== ball.reverseColor) {
             squares[i][j] = ball.reverseColor;
+            changed = true;
 
             if (Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle))) {
               ball.dx = -ball.dx;
@@ -282,6 +293,10 @@
             }
           }
         }
+      }
+
+      if (changed) {
+        lastChangeIteration = iteration;
       }
     }
 
@@ -311,6 +326,20 @@
       if (Math.abs(ball.dy) < MIN_SPEED) ball.dy = ball.dy > 0 ? MIN_SPEED : -MIN_SPEED;
     }
 
+    // Bälle „anstupsen“, wenn es zu lange keine Veränderungen gab
+    function kickBalls() {
+      balls.forEach((ball, idx) => {
+        ball.x = canvas.width / 2 + (Math.random() - 0.5) * canvas.width * 0.4;
+        ball.y = canvas.height / 2 + (Math.random() - 0.5) * canvas.height * 0.4;
+        const speed =
+          MIN_SPEED + Math.random() * (MAX_SPEED - MIN_SPEED);
+        const angle = Math.random() * Math.PI * 2;
+        ball.dx = Math.cos(angle) * speed * (idx === 0 ? 1 : -1);
+        ball.dy = Math.sin(angle) * speed;
+      });
+      lastChangeIteration = iteration;
+    }
+
     // ========= Statistik / Charts =========
 
     const totalSquares = numSquaresX * numSquaresY;
@@ -318,7 +347,7 @@
     const histCtx = document.getElementById("histChart").getContext("2d");
 
     const maxPoints = 600;
-    const bins = 50;
+    const bins = 20;
     const binWidth = 1 / bins;
     const binCenters = Array.from(
       { length: bins },
@@ -333,6 +362,8 @@
     let smoothNight = 0.5;
     let maxDay = 0.5;
     let maxNight = 0.5;
+    let minDay = 0.5;
+    let minNight = 0.5;
     const alpha = 0.9; // Glättung (EMA)
 
     const ratioChart = new Chart(ratioCtx, {
@@ -374,6 +405,24 @@
             pointRadius: 0,
             tension: 0,
           },
+          {
+            label: "Day min",
+            data: [],
+            borderColor: DAY_COLOR,
+            borderWidth: 1,
+            borderDash: [2, 4],
+            pointRadius: 0,
+            tension: 0,
+          },
+          {
+            label: "Night min",
+            data: [],
+            borderColor: NIGHT_COLOR,
+            borderWidth: 1,
+            borderDash: [2, 4],
+            pointRadius: 0,
+            tension: 0,
+          },
         ],
       },
       options: {
@@ -398,8 +447,30 @@
       },
     });
 
+    // Plugin für vertikale Hilfslinie bei x=0.5 im Histogramm
+    const midlinePlugin = {
+      id: "midline",
+      afterDraw(chart) {
+        const xScale = chart.scales.x;
+        const yScale = chart.scales.y;
+        const xValue = 0.5;
+        if (xValue < xScale.min || xValue > xScale.max) return;
+        const xPixel = xScale.getPixelForValue(xValue);
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.strokeStyle = "#666";
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(xPixel, yScale.top);
+        ctx.lineTo(xPixel, yScale.bottom);
+        ctx.stroke();
+        ctx.restore();
+      },
+    };
+
     const histChart = new Chart(histCtx, {
       type: "line",
+      plugins: [midlinePlugin],
       data: {
         datasets: [
           {
@@ -420,6 +491,15 @@
             tension: 0.2,
             fill: false,
           },
+          {
+            label: "Combined",
+            data: binCenters.map((x) => ({ x, y: 0 })),
+            borderColor: "#cccccc",
+            borderWidth: 1,
+            pointRadius: 0,
+            tension: 0.2,
+            fill: false,
+          },
         ],
       },
       options: {
@@ -432,12 +512,7 @@
             max: 1,
             title: { display: true, text: "Anteil" },
             ticks: { color: "#d9e8e3" },
-            grid: {
-              color: (ctx) =>
-                ctx.tick.value === 0.5 ? "#666" : "#333",
-              borderDash: (ctx) =>
-                ctx.tick.value === 0.5 ? [4, 4] : undefined,
-            },
+            grid: { color: "#333" },
           },
           y: {
             min: 0,
@@ -465,11 +540,15 @@
         smoothNight = ratioNight;
         maxDay = smoothDay;
         maxNight = smoothNight;
+        minDay = smoothDay;
+        minNight = smoothNight;
       } else {
         smoothDay = alpha * smoothDay + (1 - alpha) * ratioDay;
         smoothNight = alpha * smoothNight + (1 - alpha) * ratioNight;
         if (smoothDay > maxDay) maxDay = smoothDay;
         if (smoothNight > maxNight) maxNight = smoothNight;
+        if (smoothDay < minDay) minDay = smoothDay;
+        if (smoothNight < minNight) minNight = smoothNight;
       }
 
       // Live-Zeitreihe
@@ -478,6 +557,8 @@
       ratioChart.data.datasets[1].data.push(smoothNight);
       ratioChart.data.datasets[2].data.push(maxDay);
       ratioChart.data.datasets[3].data.push(maxNight);
+      ratioChart.data.datasets[4].data.push(minDay);
+      ratioChart.data.datasets[5].data.push(minNight);
 
       if (ratioChart.data.labels.length > maxPoints) {
         ratioChart.data.labels.shift();
@@ -498,6 +579,7 @@
 
       const densNight = histCountsNight.map((c) => c / totalSamples);
       const densDay = histCountsDay.map((c) => c / totalSamples);
+      const densCombined = densDay.map((v, i) => (v + densNight[i]) / 2);
 
       histChart.data.datasets[0].data = binCenters.map((x, i) => ({
         x,
@@ -506,6 +588,10 @@
       histChart.data.datasets[1].data = binCenters.map((x, i) => ({
         x,
         y: densNight[i],
+      }));
+      histChart.data.datasets[2].data = binCenters.map((x, i) => ({
+        x,
+        y: densCombined[i],
       }));
 
       histChart.update("none");
@@ -534,6 +620,11 @@
 
       if (iteration % 5 === 0) {
         updateCharts();
+      }
+
+      // Anti-Stuck: wenn lange nichts mehr passiert ist, Bälle anstupsen
+      if (iteration - lastChangeIteration > STALE_THRESHOLD) {
+        kickBalls();
       }
 
       iteration++;
